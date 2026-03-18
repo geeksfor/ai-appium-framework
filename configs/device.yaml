@@ -1,0 +1,18 @@
+appium:
+  server_url: "http://127.0.0.1:4723"
+
+device:
+  platformName: "Android"
+  automationName: "UiAutomator2"
+  deviceName: "AndroidDevice"
+  udid: "94P4C20B04004455"
+  noReset: true
+  newCommandTimeout: 300
+
+app:
+  appPackage: "com.tencent.mm"
+  appActivity: ".ui.LauncherUI"
+
+runtime:
+  implicit_wait: 10
+  evidence_dir: "evidence"
