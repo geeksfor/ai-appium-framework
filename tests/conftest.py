@@ -6,6 +6,11 @@ from core.utils.config_loader import load_yaml
 from core.report.evidence import EvidenceManager
 from core.report.step_logger import StepLogger
 from core.report.step_runner import StepRunner
+from core.executor.executor import Executor
+
+@pytest.fixture(scope="function")
+def executor(appium_adapter, step_runner):
+    return Executor(adapter=appium_adapter, step_runner=step_runner)
 
 @pytest.fixture(scope="session")
 def evidence_manager(device_config):

@@ -1,0 +1,7 @@
+{
+  "actions": [
+    { "type": "WAIT", "name": "wait_ready", "seconds": 2 },
+    { "type": "CLICK", "name": "tap_center", "x_pct": 0.5, "y_pct": 0.35 },
+    { "type": "BACK", "name": "go_back" }
+  ]
+}
