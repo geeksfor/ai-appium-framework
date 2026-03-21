@@ -7,6 +7,19 @@ from core.report.evidence import EvidenceManager
 from core.report.step_logger import StepLogger
 from core.report.step_runner import StepRunner
 from core.executor.executor import Executor
+from core.perception.ocr import QwenVisionOCRProvider
+from core.perception.perception import Perception
+
+@pytest.fixture(scope="session")
+def perception():
+    # 有 key 就用 Qwen OCR，没有就返回 None（后面 StepRunner 自动兜底）
+    if os.getenv("DASHSCOPE_API_KEY"):
+        ocr = QwenVisionOCRProvider(
+            base_url=os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+            model=os.getenv("DASHSCOPE_MODEL", "qwen-vl-ocr-latest"),
+        )
+        return Perception(ocr_provider=ocr)
+    return None
 
 @pytest.fixture(scope="function")
 def executor(appium_adapter, step_runner):
@@ -18,12 +31,13 @@ def evidence_manager(device_config):
     return EvidenceManager(base_dir=base_dir)
 
 @pytest.fixture(scope="function")
-def step_runner(evidence_manager, appium_adapter):
+def step_runner(evidence_manager, appium_adapter, perception):
     step_logger = StepLogger()
     return StepRunner(
         evidence=evidence_manager,
         step_logger=step_logger,
-        driver_getter=lambda: appium_adapter.driver
+        driver_getter=lambda: appium_adapter.driver,
+        perception=perception,
     )
 
 @pytest.fixture(scope="session")
