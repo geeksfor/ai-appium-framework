@@ -10,11 +10,11 @@ from core.perception.perception import Perception
 def _find_sample_image() -> str:
     # 兼容你可能的命名：测糖计划.png / cetang.png ...
     patterns = [
-        "tests/samples/*测糖*.*",
-        "tests/samples/*cetang*.*",
-        "tests/samples/*.png",
-        "tests/samples/*.jpg",
-        "tests/samples/*.jpeg",
+        # "tests/samples/*测糖*.*",
+        # "tests/samples/*cetang*.*",
+        # "tests/samples/*.png",
+        # "tests/samples/*.jpg",
+        "tests/samples/yindaotishi.jpeg",
     ]
     for pat in patterns:
         hits = glob.glob(pat)
