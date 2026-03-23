@@ -14,7 +14,7 @@ class AppiumAdapter:
     """
     对 Appium Driver 做一层轻封装，屏蔽测试层的底层细节。
 
-    Day 1 先提供：
+    先提供：
     - 启动 driver
     - 关闭 driver
     - 截图

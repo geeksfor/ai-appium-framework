@@ -61,8 +61,8 @@ class StepRunner:
 
     def _attach_perception(self, step, screenshot_path: Optional[str], page_source_path: Optional[str]):
         """
-        Day4（可选）：有 OCR provider + screenshot -> OCR；否则用 page_source 兜底提取可见 text
-        不影响 step 成败，best-effort
+        有 OCR provider + screenshot -> OCR: 否则用 page_source 兜底提取可见 text
+        不影响 step 成败, best-effort
         """
         try:
             if self.perception and screenshot_path:
@@ -100,7 +100,7 @@ class StepRunner:
         page_source_after: Optional[str],
     ):
         """
-        no_progress 判定（best-effort）：
+        no_progress 判定 best-effort:
         - 优先用 screenshot md5 比对
         - 截图不可用则用 page_source 内容 md5 比对
         """
@@ -161,7 +161,7 @@ class StepRunner:
             ret = fn()
 
             # ===== AFTER evidence (for no_progress) =====
-            # 不想每步都多存一份也行，但 Day5 你要 no_progress 触发就需要 after
+            # 不想每步都多存一份也行，但目前你要 no_progress 触发就需要 after
             screenshot_after = step.attach_screenshot(driver, filename="screenshot_after.png")
             page_source_after = step.attach_page_source(driver, filename="page_source_after.xml")
 
