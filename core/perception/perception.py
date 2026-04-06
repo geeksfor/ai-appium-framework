@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-from core.perception.ocr import OCRProvider, OCRResult, PageSourceTextProvider
+from core.perception.ocr import OCRProvider, OCRResult, OCRBoxesResult, PageSourceTextProvider
 
 
 @dataclass
@@ -26,24 +26,47 @@ class Perception:
                 meta={"available": False, "reason": "ocr_provider not configured"},
             )
 
+        # 1) 优先尝试带 bbox 的 OCR
+        if hasattr(self.ocr_provider, "recognize_with_boxes"):
+            try:
+                r: OCRBoxesResult = self.ocr_provider.recognize_with_boxes(image_path)  # type: ignore[attr-defined]
+                meta = {
+                    "available": (r.error is None and bool((r.text or "").strip())),
+                    "provider": r.provider,
+                    "model": r.model,
+                    "elapsed_ms": r.elapsed_ms,
+                    "ocr_boxes": r.boxes or [],
+                }
+                if r.error:
+                    meta["error"] = r.error
+                return PerceptionPack(
+                    image_path=image_path,
+                    ocr_text=r.text or "",
+                    meta=meta,
+                )
+            except Exception as e:
+                # bbox OCR 失败时，自动降级为纯文本 OCR
+                pass
+
+        # 2) 纯文本 OCR
         r: OCRResult = self.ocr_provider.recognize(image_path)
         meta = {
-            "available": (r.error is None and bool(r.text.strip())),
+            "available": (r.error is None and bool((r.text or "").strip())),
             "provider": r.provider,
             "model": r.model,
             "elapsed_ms": r.elapsed_ms,
         }
         if r.error:
             meta["error"] = r.error
+
         return PerceptionPack(image_path=image_path, ocr_text=r.text, meta=meta)
 
     @staticmethod
     def perceive_from_page_source(page_source_xml: str) -> PerceptionPack:
-        # 兜底：没有 OCR 时，把 pageSource 当成“可见文本来源”
         prov = PageSourceTextProvider()
         r = prov.recognize_from_page_source(page_source_xml)
         meta = {
-            "available": bool(r.text.strip()),
+            "available": bool((r.text or "").strip()),
             "provider": r.provider,
             "model": r.model,
             "elapsed_ms": r.elapsed_ms,

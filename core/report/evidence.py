@@ -1,15 +1,13 @@
-# core/report/evidence.py
 from __future__ import annotations
 
+import concurrent.futures
 import json
-import os
 import time
 import uuid
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
-import concurrent.futures
 
 
 def _now_str() -> str:
@@ -46,6 +44,7 @@ class EvidenceRun:
     """
     EvidenceRun 管理一次测试运行(run_id)下的所有 step 证据目录。
     """
+
     def __init__(self, base_dir: str = "evidence", run_id: Optional[str] = None):
         self.base_dir = Path(base_dir)
         self.run_id = run_id or new_run_id()
@@ -61,7 +60,10 @@ class EvidenceRun:
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "base_dir": str(self.base_dir),
         }
-        (self.run_dir / "run.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+        (self.run_dir / "run.json").write_text(
+            json.dumps(info, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def next_step_id(self) -> str:
         self._step_counter += 1
@@ -79,6 +81,7 @@ class EvidenceStep:
     EvidenceStep 表示一个步骤(step)的证据收集器。
     典型用法：with run.step(...) as step: step.attach_...()
     """
+
     def __init__(self, run: EvidenceRun, step_id: str, name: str, action: str):
         self.run = run
         self.step_id = step_id
@@ -109,52 +112,62 @@ class EvidenceStep:
         p.write_text(text, encoding="utf-8")
         return str(p)
 
-    def attach_screenshot(self, driver, filename: str = "screenshot.png") -> str:
+    def attach_screenshot(self, driver, filename: str = "screenshot.png") -> Optional[str]:
         """
         best-effort: 截图失败不抛异常，返回 None，并记录原因到 extra
         """
         try:
-          p = self.dir / filename
-          ok = driver.save_screenshot(str(p))
-          if not ok:
-            self.add_extra("screenshot_available", False)
-            self.add_extra("screenshot_reason", "save_screenshot returned False")
-            return 
-          
-          self.add_extra("screenshot_available", True)
-          return str(p)
-        except Exception as e:
-          self.add_extra("screenshot_available", False)
-          self.add_extra("screenshot_reason", f"{type(e).__name__}: {e}")
-          return None
+            p = self.dir / filename
+            ok = driver.save_screenshot(str(p))
+            if not ok:
+                self.add_extra("screenshot_available", False)
+                self.add_extra("screenshot_reason", "save_screenshot returned False")
+                return None
 
-    def get_page_source_with_timeout(driver, timeout_sec: int = 3) -> str | None:
-      with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-        fut = ex.submit(lambda: driver.page_source)
-        try:
-          return fut.result(timeout=timeout_sec)
-        except Exception:
-          return None
-    
-    def attach_page_source(self, driver, filename: str = "page_source.xml") -> str:
+            self.add_extra("screenshot_available", True)
+            self.add_extra("screenshot_path", str(p))
+            return str(p)
+        except Exception as e:
+            self.add_extra("screenshot_available", False)
+            self.add_extra("screenshot_reason", f"{type(e).__name__}: {e}")
+            return None
+
+    @staticmethod
+    def get_page_source_with_timeout(driver, timeout_sec: int = 3) -> Optional[str]:
+        """
+        page_source 在部分设备/页面上可能阻塞。
+        用线程池做一个轻量超时保护，避免单步卡死。
+        """
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(lambda: driver.page_source)
+            try:
+                return fut.result(timeout=timeout_sec)
+            except concurrent.futures.TimeoutError:
+                return None
+            except Exception:
+                return None
+
+    def attach_page_source(self, driver, filename: str = "page_source.xml") -> Optional[str]:
         """
         best-effort: 失败不抛异常，返回 None，并把原因写入 meta extra
         """
         try:
-          p = self.dir / filename
-          src = self.get_page_source_with_timeout(driver)
-          if not src or not src.strip():
-            self.add_extra("page_source_available", False)
-            self.add_extra("page_source_reason", "empty")
-            return None
-          p.write_text(src, encoding="utf-8")
-          self.add_extra("page_source_available", True)
-          return str(p)
+            p = self.dir / filename
+            src = self.get_page_source_with_timeout(driver)
+            if not src or not src.strip():
+                self.add_extra("page_source_available", False)
+                self.add_extra("page_source_reason", "empty_or_timeout")
+                return None
+
+            p.write_text(src, encoding="utf-8")
+            self.add_extra("page_source_available", True)
+            self.add_extra("page_source_path", str(p))
+            return str(p)
         except Exception as e:
-          self.add_extra("page_source_available", False)
-          self.add_extra("page_source_reason", f"{type(e).__name__}: {e}")
-          return None
-        
+            self.add_extra("page_source_available", False)
+            self.add_extra("page_source_reason", f"{type(e).__name__}: {e}")
+            return None
+
     def add_extra(self, key: str, value: Any) -> None:
         self.extra[key] = value
 
@@ -183,10 +196,9 @@ class EvidenceStep:
             extra=self.extra or None,
         )
 
-        # 写 meta.json
         (self.dir / "meta.json").write_text(
             json.dumps(asdict(meta), ensure_ascii=False, indent=2),
-            encoding="utf-8"
+            encoding="utf-8",
         )
         return meta
 
@@ -195,6 +207,7 @@ class EvidenceManager:
     """
     对外的统一入口：创建 run、创建 step（支持 with）
     """
+
     def __init__(self, base_dir: str = "evidence", run_id: Optional[str] = None):
         self.run = EvidenceRun(base_dir=base_dir, run_id=run_id)
 

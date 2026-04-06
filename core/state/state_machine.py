@@ -13,6 +13,8 @@ from core.state.rules.plan_tab import BloodSugarPlanTabRule
 from core.state.rules.miniprogram_entry import MiniProgramEntryRule
 from core.state.rules.wechat_home import WeChatHomeRule
 from core.state.rules.popup_onboarding_consent import PopupOnboardingConsentRule
+from core.state.rules.luoe_login import LuoeLoginRule
+from core.state.rules.luoe_home import LuoeHomeRule
 
 
 @dataclass
@@ -39,9 +41,12 @@ class StateMachine:
             # PopupPrivacyConsentRule(),
             PopupOnboardingConsentRule(),
             PopupActivityGuideRule(),
-            BloodSugarPlanTabRule(),
-            MiniProgramEntryRule(),
-            WeChatHomeRule(),
+            # 罗e联真实 App 页面优先级：先识别登录/首页，再回退旧的小程序规则
+            LuoeLoginRule(),
+            LuoeHomeRule(),
+            # BloodSugarPlanTabRule(),
+            # MiniProgramEntryRule(),
+            # WeChatHomeRule(),
         ]
 
     def detect_state(self, pack: PerceptionPack) -> StateDetectResult:

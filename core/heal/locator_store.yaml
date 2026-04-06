@@ -1,0 +1,71 @@
+entries:
+  agree:
+    aliases:
+      - 同意
+      - 同意并继续
+      - 我知道了
+      - 确认
+      - 确定
+      - 允许
+      - 去开启
+    preferred_regions:
+      - bottom_center
+      - bottom_right
+    notes: 通用确认类按钮
+
+  cancel:
+    aliases:
+      - 取消
+      - 关闭
+      - 暂不
+      - 稍后
+      - 不允许
+    preferred_regions:
+      - bottom_left
+      - center
+    notes: 通用取消类按钮
+
+  save:
+    aliases:
+      - 保存
+      - 提交
+      - 完成
+      - 确认提交
+      - 立即保存
+    preferred_regions:
+      - bottom_right
+      - bottom_center
+    notes: 表单提交类按钮
+
+  next:
+    aliases:
+      - 下一步
+      - 继续
+      - 继续填写
+      - 去看看
+      - 开始
+    preferred_regions:
+      - bottom_center
+      - bottom_right
+    notes: 流程推进类按钮
+
+  back:
+    aliases:
+      - 返回
+      - 上一步
+      - 返回首页
+    preferred_regions:
+      - top_left
+      - center_left
+    notes: 返回类按钮
+
+  search:
+    aliases:
+      - 搜索
+      - 查找
+      - 去搜索
+      - 搜一下
+    preferred_regions:
+      - top_center
+      - center
+    notes: 搜索入口类按钮
