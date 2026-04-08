@@ -1,0 +1,1 @@
+from core.state.rules.popup_onboarding_consent import PopupOnboardingConsentRule

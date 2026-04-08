@@ -9,7 +9,7 @@ from pathlib import Path
 
 from core.driver.appium_adapter import AppiumAdapter
 from core.executor.executor import Executor
-from core.heal.heal_policy import HealPolicy
+from core.heal.heal_policy import HealPolicy, PolicyRunnerHealAIProvider
 from core.perception.ocr import QwenOCRBoxesProvider
 from core.perception.perception import Perception
 from core.report.evidence import EvidenceManager
@@ -71,9 +71,10 @@ def build_executor_factory(device_yaml: str):
             driver_getter=lambda: adapter.driver,
             perception=perception,
         )
+        ai_provider = PolicyRunnerHealAIProvider(None) if os.getenv("DASHSCOPE_API_KEY") else None
         click_healer = HealPolicy(
             locator_store_path="core/heal/locator_store.yaml",
-            ai_provider=None,
+            ai_provider=ai_provider,
             accept_threshold=0.72,
         )
         adapter.start()

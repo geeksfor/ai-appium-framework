@@ -63,15 +63,30 @@ class StepRunner:
         """
         有 OCR provider + screenshot -> OCR: 否则用 page_source 兜底提取可见 text
         不影响 step 成败, best-effort
+
+        调试增强：
+        - 额外落盘 ocr_raw_model_text.txt
+        - 额外落盘 ocr_raw_response.json
+        方便排查“文本识别到了，但 boxes 为空”的问题。
         """
         try:
             if self.perception and screenshot_path:
                 pack = self.perception.perceive_image(screenshot_path)
+                meta = dict(pack.meta or {})
+                raw_text = meta.pop("_ocr_raw_model_text", None)
+                raw_response = meta.pop("_ocr_raw_response", None)
+
                 step.attach_text("ocr.txt", pack.ocr_text or "")
-                step.attach_json("perception.json", pack.meta)
-                step.add_extra("perception_available", bool(pack.meta.get("available")))
-                step.add_extra("perception_provider", pack.meta.get("provider"))
-                step.add_extra("perception_model", pack.meta.get("model"))
+                step.attach_json("perception.json", meta)
+                if raw_text is not None:
+                    step.attach_text("ocr_raw_model_text.txt", str(raw_text))
+                if raw_response is not None:
+                    step.attach_json("ocr_raw_response.json", raw_response)
+
+                step.add_extra("perception_available", bool(meta.get("available")))
+                step.add_extra("perception_provider", meta.get("provider"))
+                step.add_extra("perception_model", meta.get("model"))
+                step.add_extra("ocr_box_count", len(meta.get("ocr_boxes", []) or []))
                 return
 
             if page_source_path:

@@ -1,12 +1,11 @@
-# core/executor/executor.py
 from __future__ import annotations
 
+import json
 import re
-import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from selenium.webdriver.common.keys import Keys
 
@@ -23,8 +22,7 @@ from core.executor.action_schema import (
     SwipeAction,
     WaitAction,
 )
-from core.perception.perception import Perception, PerceptionPack
-from core.report.evidence import EvidenceStep
+from core.perception.perception import PerceptionPack
 from core.report.step_runner import StepRunner
 
 
@@ -65,27 +63,22 @@ class Executor:
         for idx, act in enumerate(plan.actions, start=1):
             step_name = act.name or f"{idx:02d}_{act.type}"
             last_action = act.model_dump()
-
-            self.step_runner.run(
-                name=step_name,
-                action=str(act.type),
-                fn=lambda a=act: self._execute_one(a),
-            )
+            self.step_runner.run(name=step_name, action=str(act.type), fn=lambda a=act: self._execute_one(a))
             executed += 1
 
         return ExecResult(ok=True, executed=executed, last_action=last_action, actions_path=actions_path)
 
     def _execute_one(self, act: Action) -> Any:
         if act.type == ActionType.CLICK:
-            return self._do_click(act)  # type: ignore[arg-type]
+            return self._do_click(act)
         if act.type == ActionType.WAIT:
-            return self._do_wait(act)  # type: ignore[arg-type]
+            return self._do_wait(act)
         if act.type == ActionType.BACK:
-            return self._do_back(act)  # type: ignore[arg-type]
+            return self._do_back(act)
         if act.type == ActionType.ASSERT:
-            return self._do_assert(act)  # type: ignore[arg-type]
+            return self._do_assert(act)
         if act.type == ActionType.INPUT:
-            return self._do_input(act)  # type: ignore[arg-type]
+            return self._do_input(act)
         if act.type == ActionType.SELECT:
             return self._do_select(act)
         if act.type == ActionType.SWIPE:
@@ -93,48 +86,66 @@ class Executor:
         raise ValueError(f"Unsupported action type: {act.type}")
 
     def _do_click(self, act: ClickAction) -> None:
-        if act.x is not None and act.y is not None:
-            x, y = int(act.x), int(act.y)
-        else:
-            size = self.adapter.get_window_size()
-            x = int(size["width"] * float(act.x_pct))
-            y = int(size["height"] * float(act.y_pct))
+        has_abs = act.x is not None and act.y is not None
+        has_pct = act.x_pct is not None and act.y_pct is not None
 
-        if hasattr(act, "allow_heal") and not act.allow_heal:
-            self.adapter.tap(x, y)
-            return
+        if has_abs or has_pct:
+            if has_abs:
+                x, y = int(act.x), int(act.y)
+            else:
+                size = self.adapter.get_window_size()
+                x = int(size["width"] * float(act.x_pct))
+                y = int(size["height"] * float(act.y_pct))
 
-        try:
-            self.adapter.tap(x, y)
-            return
-        except Exception as tap_err:
-            if self.click_healer is None:
-                raise tap_err
-
-            heal_selector = self._pick_heal_selector(act)
-            if not heal_selector:
-                raise tap_err
-
-            pack = self._build_pack()
-            save_path = self._next_heal_save_path(heal_selector)
+            if hasattr(act, "allow_heal") and not act.allow_heal:
+                self.adapter.tap(x, y)
+                return
 
             try:
-                result = self.click_healer.heal_click(
-                    pack=pack,
-                    selector=heal_selector,
-                    logical_name=self._str_or_none(getattr(act, "logical_name", "")),
-                    save_path=save_path,
-                )
-            except Exception:
-                raise tap_err
+                self.adapter.tap(x, y)
+                return
+            except Exception as tap_err:
+                if self.click_healer is None:
+                    raise tap_err
+                self._heal_and_tap(act, tap_err)
+                return
 
-            if not result or not result.healed or result.chosen is None:
-                raise tap_err
+        # 纯语义点击：直接构建 pack -> healer 计算坐标 -> 点击
+        if self.click_healer is None:
+            raise RuntimeError("Semantic CLICK requires click_healer to be configured.")
+        self._heal_and_tap(act, None)
 
-            size = self.adapter.get_window_size()
-            heal_x = int(size["width"] * float(result.chosen.x_pct))
-            heal_y = int(size["height"] * float(result.chosen.y_pct))
-            self.adapter.tap(heal_x, heal_y)
+    def _heal_and_tap(self, act: ClickAction, original_error: Exception | None) -> None:
+        heal_selector = self._pick_heal_selector(act)
+        if not heal_selector:
+            if original_error is not None:
+                raise original_error
+            raise RuntimeError("Semantic CLICK missing selector/target/logical_name.")
+
+        pack = self._build_pack()
+        save_path = self._next_heal_save_path(heal_selector)
+
+        try:
+            result = self.click_healer.heal_click(
+                pack=pack,
+                selector=heal_selector,
+                logical_name=self._str_or_none(getattr(act, "logical_name", "")),
+                save_path=save_path,
+            )
+        except Exception:
+            if original_error is not None:
+                raise original_error
+            raise
+
+        if not result or not result.healed or result.chosen is None:
+            if original_error is not None:
+                raise original_error
+            raise RuntimeError(f"Semantic CLICK unresolved: selector={heal_selector}")
+
+        size = self.adapter.get_window_size()
+        heal_x = int(size["width"] * float(result.chosen.x_pct))
+        heal_y = int(size["height"] * float(result.chosen.y_pct))
+        self.adapter.tap(heal_x, heal_y)
 
     def _do_wait(self, act: WaitAction) -> None:
         time.sleep(float(act.seconds))
@@ -146,7 +157,6 @@ class Executor:
         src = self.adapter.driver.page_source if self.adapter.driver else ""
         if not src:
             raise AssertionError("ASSERT failed: page_source is empty/unavailable.")
-
         hay = src.lower() if act.ignore_case else src
         needle = act.contains_text.lower() if act.ignore_case else act.contains_text
         if needle not in hay:
@@ -162,22 +172,18 @@ class Executor:
         driver = self.adapter.driver
         if not driver:
             raise RuntimeError("Driver not started")
-
         x, y = self._xy_from_abs_or_pct(act.x, act.y, act.x_pct, act.y_pct)
         self.adapter.tap(x, y)
         time.sleep(0.2)
-
         if act.clear_first:
             try:
                 driver.switch_to.active_element.clear()
             except Exception:
                 pass
-
         try:
             driver.switch_to.active_element.send_keys(act.text)
         except Exception:
             driver.execute_script("mobile: type", {"text": act.text})
-
         if act.press_enter:
             try:
                 driver.switch_to.active_element.send_keys(Keys.ENTER)
@@ -185,36 +191,22 @@ class Executor:
                 pass
 
     def _do_select(self, act: SelectAction) -> None:
-        ox, oy = self._xy_from_abs_or_pct(
-            act.open_x,
-            act.open_y,
-            act.open_x_pct,
-            act.open_y_pct,
-        )
+        ox, oy = self._xy_from_abs_or_pct(act.open_x, act.open_y, act.open_x_pct, act.open_y_pct)
         self.adapter.tap(ox, oy)
         time.sleep(0.3)
-
-        px, py = self._xy_from_abs_or_pct(
-            act.option_x,
-            act.option_y,
-            act.option_x_pct,
-            act.option_y_pct,
-        )
+        px, py = self._xy_from_abs_or_pct(act.option_x, act.option_y, act.option_x_pct, act.option_y_pct)
         self.adapter.tap(px, py)
 
     def _do_swipe(self, act: SwipeAction) -> None:
         driver = self.adapter.driver
         if not driver:
             raise RuntimeError("Driver not started")
-
         size = self.adapter.get_window_size()
         w, h = size["width"], size["height"]
-
         left = int(w * act.left_pct)
         top = int(h * act.top_pct)
         width = int(w * act.width_pct)
         height = int(h * act.height_pct)
-
         driver.execute_script(
             "mobile: swipeGesture",
             {
@@ -232,22 +224,17 @@ class Executor:
         selector = self._str_or_none(getattr(act, "selector", ""))
         if selector:
             return selector
-
         target = self._str_or_none(getattr(act, "target", ""))
         if target:
             return f"text={target}"
-
         target_text = self._str_or_none(getattr(act, "target_text", ""))
         if target_text:
             return f"text={target_text}"
-
         logical_name = self._str_or_none(getattr(act, "logical_name", ""))
         if logical_name:
             return logical_name
-
         if act.name:
             return str(act.name)
-
         return None
 
     def _str_or_none(self, value: Any) -> str | None:
@@ -255,18 +242,8 @@ class Executor:
         return s if s else None
 
     def _build_pack(self) -> Any:
-        """
-        给点击自愈构造一个真正可用的当前页面 pack：
-        1) 优先现场截图 + OCR
-        2) 再退化到 page_source 文本感知
-        3) 最后再退回最小空 pack
-        """
-        driver = getattr(self.adapter, "driver", None)
-
-        screenshot_path = self._capture_tmp_screenshot(driver)
-        page_source = self._safe_page_source(driver)
-
-        pack = self._build_pack_from_live_inputs(screenshot_path=screenshot_path, page_source=page_source)
+        # 优先读取当前 step_runner 已采集好的 evidence，不让 case 自己拼 pack。
+        pack = self._pack_from_latest_step()
         if pack is not None:
             return pack
 
@@ -280,80 +257,28 @@ class Executor:
                             return pack
                     except TypeError:
                         continue
-                    except Exception:
-                        break
 
-        return SimplePack(
-            image_path=screenshot_path or "",
-            ocr_text="",
-            meta={
-                "ocr_boxes": [],
-                "available": False,
-                "reason": "live_perception_unavailable",
-                "page_source_available": bool(page_source),
-            },
-        )
+        return SimplePack(image_path="", ocr_text="", meta={"ocr_boxes": []})
 
-    def _build_pack_from_live_inputs(
-        self,
-        screenshot_path: Optional[str],
-        page_source: Optional[str],
-    ) -> Optional[PerceptionPack | SimplePack]:
-        if self.perception is not None and screenshot_path:
-            try:
-                if hasattr(self.perception, "perceive_image"):
-                    pack = self.perception.perceive_image(screenshot_path)
-                    pack.meta.setdefault("page_source_available", bool(page_source))
-                    if page_source:
-                        pack.meta.setdefault("page_source_length", len(page_source))
-                    return pack
-            except Exception:
-                pass
-
-        if page_source:
-            try:
-                pack = Perception.perceive_from_page_source(page_source)
-                pack.image_path = screenshot_path or ""
-                pack.meta.setdefault("ocr_boxes", [])
-                pack.meta["page_source_available"] = True
-                return pack
-            except Exception:
-                pass
-
-        return None
-
-    def _capture_tmp_screenshot(self, driver: Any) -> Optional[str]:
-        if driver is None:
-            return None
-
-        root = Path("artifacts") / "heal" / "_tmp"
-        root.mkdir(parents=True, exist_ok=True)
-
+    def _pack_from_latest_step(self) -> PerceptionPack | None:
         try:
-            with tempfile.NamedTemporaryFile(prefix="live_", suffix=".png", dir=str(root), delete=False) as f:
-                path = f.name
-        except Exception:
-            path = str(root / f"live_{int(time.time() * 1000)}.png")
-
-        try:
-            ok = driver.save_screenshot(path)
-            if ok:
-                return path
-        except Exception:
-            return None
-        return None
-
-    def _safe_page_source(self, driver: Any, timeout_sec: int = 3) -> Optional[str]:
-        if driver is None:
-            return None
-
-        try:
-            return EvidenceStep.get_page_source_with_timeout(driver, timeout_sec=timeout_sec)
-        except Exception:
-            pass
-
-        try:
-            return driver.page_source
+            run_dir = Path(self.step_runner.evidence.run.run_dir)
+            step_dirs = sorted([p for p in run_dir.iterdir() if p.is_dir() and p.name[:4].isdigit()])
+            if not step_dirs:
+                return None
+            step_dir = step_dirs[-1]
+            ocr_path = step_dir / "ocr.txt"
+            meta_path = step_dir / "perception.json"
+            image_path = step_dir / "screenshot.png"
+            if not image_path.exists():
+                image_path = step_dir / "screenshot_after.png"
+            text = ocr_path.read_text(encoding="utf-8", errors="ignore") if ocr_path.exists() else ""
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {"ocr_boxes": []}
+            return PerceptionPack(
+                image_path=str(image_path) if image_path.exists() else "",
+                ocr_text=text,
+                meta=meta,
+            )
         except Exception:
             return None
 
@@ -361,20 +286,17 @@ class Executor:
         self._heal_seq += 1
         root = Path("artifacts") / "heal"
         root.mkdir(parents=True, exist_ok=True)
-
-        safe_name = re.sub(r"[^\w\u4e00-\u9fff\-]+", "_", str(target_name or "unknown"))
+        safe_name = re.sub(r"[^\w一-鿿\-]+", "_", str(target_name or "unknown"))
         safe_name = safe_name.strip("_") or "unknown"
-
         d = root / f"{self._heal_seq:03d}_{safe_name[:40]}"
         d.mkdir(parents=True, exist_ok=True)
         return d / "heal_candidates.json"
 
-    def _archive_actions(self, plan: ActionPlan) -> Optional[str]:
+    def _archive_actions(self, plan: ActionPlan) -> str | None:
         try:
-            root = Path(self.step_runner.evidence.run.run_dir)
-            p = root / "actions.json"
-            payload = plan.model_dump(mode="json")
-            p.write_text(__import__("json").dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            run_dir = Path(self.step_runner.evidence.run.run_dir)
+            p = run_dir / "actions.json"
+            p.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
             return str(p)
         except Exception:
             return None

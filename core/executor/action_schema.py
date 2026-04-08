@@ -1,4 +1,3 @@
-# core/executor/action_schema.py
 from __future__ import annotations
 
 from enum import Enum
@@ -30,48 +29,29 @@ class BaseAction(BaseModel):
 class ClickAction(BaseAction):
     type: Literal[ActionType.CLICK] = ActionType.CLICK
 
-    # -------------------------
-    # 原有点击坐标：保持不变
-    # -------------------------
-    # 1) 绝对坐标：x/y
     x: Optional[int] = Field(default=None, ge=0)
     y: Optional[int] = Field(default=None, ge=0)
 
-    # 2) 百分比：x_pct/y_pct（0~1）
     x_pct: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     y_pct: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
-    # -------------------------
-    # Day11 自愈辅助语义字段：全部可选
-    # 不影响旧计划，只给自愈提供“原本想点谁”的信息
-    # -------------------------
-    selector: str = Field(
-        default="",
-        description="原始定位表达式，例如 text=同意、//*[@text='保存']、id=submit_btn"
-    )
-    target: str = Field(
-        default="",
-        description="语义目标文本，例如 保存、确认、同意"
-    )
-    target_text: str = Field(
-        default="",
-        description="target 的兼容别名，便于历史/AI 输出兼容"
-    )
-    logical_name: str = Field(
-        default="",
-        description="逻辑动作名，例如 save、agree、next，用于 locator_store 检索"
-    )
-    allow_heal: bool = Field(
-        default=True,
-        description="点击失败时是否允许走自愈"
-    )
+    selector: str = Field(default="", description="原始定位表达式，例如 text=同意、//*[@text='保存']、id=submit_btn")
+    target: str = Field(default="", description="语义目标文本，例如 保存、确认、同意")
+    target_text: str = Field(default="", description="target 的兼容别名，便于历史/AI 输出兼容")
+    logical_name: str = Field(default="", description="逻辑动作名，例如 save、agree、next，用于 locator_store 检索")
+    allow_heal: bool = Field(default=True, description="点击失败时是否允许走自愈")
 
     @model_validator(mode="after")
     def validate_xy(self):
         abs_ok = self.x is not None and self.y is not None
         pct_ok = self.x_pct is not None and self.y_pct is not None
-        if abs_ok == pct_ok:
-            raise ValueError("CLICK requires either (x,y) OR (x_pct,y_pct).")
+        semantic_ok = any([self.selector.strip(), self.target.strip(), self.target_text.strip(), self.logical_name.strip()])
+
+        if abs_ok and pct_ok:
+            raise ValueError("CLICK cannot provide both absolute and percentage coordinates.")
+
+        if not abs_ok and not pct_ok and not semantic_ok:
+            raise ValueError("CLICK requires either (x,y), (x_pct,y_pct), or semantic selector/target/logical_name.")
         return self
 
 
@@ -113,9 +93,6 @@ class InputAction(BaseAction):
 
 
 class SelectAction(BaseAction):
-    """
-    黑盒 SELECT：点开(open) -> 点选(option)
-    """
     type: Literal[ActionType.SELECT] = ActionType.SELECT
 
     open_x: Optional[int] = Field(default=None, ge=0)

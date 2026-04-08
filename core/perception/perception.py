@@ -1,4 +1,3 @@
-# core/perception/perception.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -39,12 +38,19 @@ class Perception:
                 }
                 if r.error:
                     meta["error"] = r.error
+
+                # 调试信息：不直接写进 perception.json，交给 StepRunner 落盘到单独文件
+                if r.raw is not None:
+                    meta["_ocr_raw_response"] = r.raw
+                if r.text is not None:
+                    meta["_ocr_raw_model_text"] = r.text
+
                 return PerceptionPack(
                     image_path=image_path,
                     ocr_text=r.text or "",
                     meta=meta,
                 )
-            except Exception as e:
+            except Exception:
                 # bbox OCR 失败时，自动降级为纯文本 OCR
                 pass
 
@@ -58,6 +64,11 @@ class Perception:
         }
         if r.error:
             meta["error"] = r.error
+
+        if r.raw is not None:
+            meta["_ocr_raw_response"] = r.raw
+        if r.text is not None:
+            meta["_ocr_raw_model_text"] = r.text
 
         return PerceptionPack(image_path=image_path, ocr_text=r.text, meta=meta)
 

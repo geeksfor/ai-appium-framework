@@ -1,0 +1,29 @@
+project_id: luoe
+app_package: cn.roche.elink.test
+default_home_state: Luoe.Home
+
+state_aliases:
+  Login: Luoe.Login
+  Home: Luoe.Home
+
+rules:
+  - projects.common.rules.popup_permission.PopupPermissionRule
+  - projects.common.rules.popup_onboarding_consent.PopupOnboardingConsentRule
+  - projects.common.rules.popup_activity_guide.PopupActivityGuideRule
+  - projects.luoe.rules.luoe_login.LuoeLoginRule
+  - projects.luoe.rules.luoe_home.LuoeHomeRule
+
+semantic_targets:
+  login_button:
+    aliases: ["登录"]
+  home_entry_qualification:
+    aliases: ["资质查询"]
+  home_entry_repair:
+    aliases: ["视频报修"]
+
+risk_words:
+  - 登录
+  - 注册
+  - 支付
+  - 开通
+  - 绑定

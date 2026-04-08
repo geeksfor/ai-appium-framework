@@ -1,20 +1,11 @@
-# core/state/state_machine.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 
 from core.perception.perception import PerceptionPack
+from core.state.registry import build_rules_for_project
 from core.state.rules.base import Rule, MatchResult
-
-from core.state.rules.popup_permission import PopupPermissionRule
-from core.state.rules.popup_activity_guide import PopupActivityGuideRule
-from core.state.rules.plan_tab import BloodSugarPlanTabRule
-from core.state.rules.miniprogram_entry import MiniProgramEntryRule
-from core.state.rules.wechat_home import WeChatHomeRule
-from core.state.rules.popup_onboarding_consent import PopupOnboardingConsentRule
-from core.state.rules.luoe_login import LuoeLoginRule
-from core.state.rules.luoe_home import LuoeHomeRule
 
 
 @dataclass
@@ -28,26 +19,13 @@ class StateDetectResult:
 
 class StateMachine:
     """
-    StateMachine v1.3
-    - 使用 ok_candidate gate（避免“Popup.Permission 假 best”）
-    - Popup 短路返回；页面需二次确认（confirm_*）
-    - 新增：overlay_suspected（Unknown 时用于 Day6 AI 触发）
+    通用状态机。
+    具体规则由项目适配层提供，而不是写死在 core/ 里。
     """
 
-    def __init__(self, rules: Optional[List[Rule]] = None):
-        self.rules: List[Rule] = rules or [
-            PopupPermissionRule(),
-            # 如果你有 PrivacyConsentRule，可插在这里：
-            # PopupPrivacyConsentRule(),
-            PopupOnboardingConsentRule(),
-            PopupActivityGuideRule(),
-            # 罗e联真实 App 页面优先级：先识别登录/首页，再回退旧的小程序规则
-            LuoeLoginRule(),
-            LuoeHomeRule(),
-            # BloodSugarPlanTabRule(),
-            # MiniProgramEntryRule(),
-            # WeChatHomeRule(),
-        ]
+    def __init__(self, rules: Optional[List[Rule]] = None, project_id: Optional[str] = None):
+        self.project_id = project_id
+        self.rules: List[Rule] = rules or build_rules_for_project(project_id)
 
     def detect_state(self, pack: PerceptionPack) -> StateDetectResult:
         raw_text = (pack.ocr_text or "")
@@ -80,7 +58,6 @@ class StateMachine:
             }
 
         def _second_confirm(rule: Rule, mr: MatchResult) -> tuple[bool, str]:
-            # 排除词
             for s in getattr(rule, "confirm_not_contains", []) or []:
                 if s and s.lower() in t_low:
                     return False, f"confirm_not_contains hit: {s}"
@@ -89,11 +66,9 @@ class StateMachine:
             confirm_min_any_hits = int(getattr(rule, "confirm_min_any_hits", 0) or 0)
             any_hits = (mr.meta or {}).get("any_hits", []) or []
 
-            # 未配置任何确认条件 -> 默认通过
             if not confirm_any and confirm_min_any_hits <= 0:
                 return True, "no confirm constraints"
 
-            # 满足其一即可通过
             if confirm_any:
                 for s in confirm_any:
                     if s and s.lower() in t_low:
@@ -105,7 +80,6 @@ class StateMachine:
 
             return False, "confirm conditions not met"
 
-        # ===== overlay_suspected：只用于 Unknown 时 Day6 触发 AI =====
         overlay_hint_words = [
             "请登录", "登录", "去登录",
             "关闭", "跳过", "点击跳过", "我知道了", "知道了",
@@ -120,7 +94,6 @@ class StateMachine:
             for w in overlay_hint_words:
                 if w and w.lower() in t_low:
                     hits.append(w)
-            # 去重保持顺序
             seen = set()
             out = []
             for h in hits:
@@ -129,7 +102,6 @@ class StateMachine:
                     out.append(h)
             return out
 
-        # 规则评估
         for r in self.rules:
             mr = r.score(text)
             matches.append(mr)
@@ -145,7 +117,6 @@ class StateMachine:
 
             candidates.append(mr)
 
-            # Popup：命中即短路
             if _is_popup_state(mr.state):
                 topk = sorted(matches, key=lambda m: m.score, reverse=True)[:5]
                 meta = {
@@ -160,10 +131,10 @@ class StateMachine:
                     "best_rule": r.state_name,
                     "overlay_suspected": False,
                     "overlay_hints": [],
+                    "project_id": self.project_id,
                 }
                 return StateDetectResult(mr.state, mr.score, matches, mr, meta)
 
-            # 页面：二次确认
             ok2, why2 = _second_confirm(r, mr)
             if ok2:
                 topk = sorted(matches, key=lambda m: m.score, reverse=True)[:5]
@@ -180,13 +151,13 @@ class StateMachine:
                     "confirm": {"ok": True, "detail": why2},
                     "overlay_suspected": False,
                     "overlay_hints": [],
+                    "project_id": self.project_id,
                 }
                 return StateDetectResult(mr.state, mr.score, matches, mr, meta)
 
             mr.meta = mr.meta or {}
             mr.meta["confirm"] = {"ok": False, "detail": why2}
 
-        # Unknown：输出 overlay_suspected/hints 给 Day6 使用
         topk = sorted(matches, key=lambda m: m.score, reverse=True)[:5]
         hints = _overlay_hints()
         meta = {
@@ -200,6 +171,7 @@ class StateMachine:
             "best_rule": best_rule.state_name if best_rule else None,
             "overlay_suspected": bool(hints),
             "overlay_hints": hints,
+            "project_id": self.project_id,
         }
 
         return StateDetectResult("Unknown", 0.0, matches, best, meta)

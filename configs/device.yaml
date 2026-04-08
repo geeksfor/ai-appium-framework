@@ -5,15 +5,15 @@ device:
   platformName: "Android"
   automationName: "UiAutomator2"
   deviceName: "AndroidDevice"
-  udid: "94P4C20B04004455"
+  udid: "LNXYD23216600727"
   noReset: true
   newCommandTimeout: 300
 
 app:
   # 这里先保留当前可运行配置，切到罗e联时把下面两项改成罗e联的包名/启动页即可。
   # 例如可先用 adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' 来确认。
-  appPackage: "com.tencent.mm"
-  appActivity: ".ui.LauncherUI"
+  appPackage: "cn.roche.elink.test"
+  # appActivity: ".ui.LauncherUI"
 
 runtime:
   implicit_wait: 10

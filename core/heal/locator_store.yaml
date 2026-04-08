@@ -69,3 +69,13 @@ entries:
       - top_center
       - center
     notes: 搜索入口类按钮
+
+  login_button:
+    aliases:
+      - 登录
+      - 去登录
+      - 立即登录
+    preferred_regions:
+      - bottom_center
+      - bottom_right
+    notes: 登录页主按钮，boxes 为空时优先走 AI 点击兜底

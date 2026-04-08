@@ -1,0 +1,42 @@
+{
+  "raw_target": "登录",
+  "healed": true,
+  "confidence": 0.95,
+  "chosen": {
+    "text": "登录",
+    "x_pct": 0.73,
+    "y_pct": 0.91,
+    "score": 0.95,
+    "source": "ai",
+    "reason": "在底部中心位置有一个蓝色的登录按钮，其文本为'登录'，符合目标文案和优先区域要求。 | 视觉AI",
+    "raw_target": "登录",
+    "bbox": null
+  },
+  "candidates": [
+    {
+      "text": "登录",
+      "x_pct": 0.73,
+      "y_pct": 0.91,
+      "score": 0.95,
+      "source": "ai",
+      "reason": "在底部中心位置有一个蓝色的登录按钮，其文本为'登录'，符合目标文案和优先区域要求。 | 视觉AI",
+      "raw_target": "登录",
+      "bbox": null
+    },
+    {
+      "text": "登录",
+      "x_pct": 0.761,
+      "y_pct": 0.089,
+      "score": 0.7957,
+      "source": "ocr+store",
+      "reason": "ocr命中，文本最接近“登录”，位置分=0.36",
+      "raw_target": "登录",
+      "bbox": {
+        "x1": 0.522,
+        "y1": 0.0,
+        "x2": 1.0,
+        "y2": 0.178
+      }
+    }
+  ]
+}
