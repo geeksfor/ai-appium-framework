@@ -9,6 +9,7 @@ from typing import Callable, TypeVar, Optional
 
 from core.report.evidence import EvidenceManager
 from core.report.step_logger import StepLogger
+from core.recovery.click_debugger import render_click_debug
 
 T = TypeVar("T")
 
@@ -82,6 +83,17 @@ class StepRunner:
                     step.attach_text("ocr_raw_model_text.txt", str(raw_text))
                 if raw_response is not None:
                     step.attach_json("ocr_raw_response.json", raw_response)
+                try:
+                    if screenshot_path and meta.get("ocr_boxes"):
+                        render_click_debug(
+                            image_path=screenshot_path,
+                            boxes=list(meta.get("ocr_boxes") or []),
+                            chosen=None,
+                            out_path=str(Path(step.dir) / "ocr_boxes_debug.png"),
+                            note=f"provider={meta.get('provider')} model={meta.get('model')}",
+                        )
+                except Exception:
+                    pass
 
                 step.add_extra("perception_available", bool(meta.get("available")))
                 step.add_extra("perception_provider", meta.get("provider"))

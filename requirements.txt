@@ -3,3 +3,10 @@ pytest==8.3.2
 PyYAML==6.0.2
 pydantic==2.8.2
 requests==2.32.3
+Pillow>=10.0.0
+# opencv-python>=4.8.0
+
+# 可选：推荐本地 OCR，稳定性通常好于让大模型直接回 bbox
+# rapidocr_onnxruntime>=1.3.22
+# onnxruntime>=1.18.0
+# easyocr>=1.7.1

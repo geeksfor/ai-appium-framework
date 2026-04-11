@@ -4,7 +4,7 @@ import pytest
 from core.driver.appium_adapter import AppiumAdapter
 from core.executor.executor import Executor
 from core.heal.heal_policy import HealPolicy, PolicyRunnerHealAIProvider
-from core.perception.ocr import QwenOCRBoxesProvider
+from core.perception.ocr import build_ocr_provider_from_env
 from core.perception.perception import Perception
 from core.policy.policy_runner import PolicyRunner
 from core.policy.qwen_client import QwenClient
@@ -28,13 +28,11 @@ def project_profile(project_id):
 
 @pytest.fixture(scope="session")
 def perception():
-    if os.getenv("DASHSCOPE_API_KEY"):
-        ocr = QwenOCRBoxesProvider(
-            base_url=os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-            model=os.getenv("DASHSCOPE_BBOX_MODEL", "qwen-vl-ocr-latest"),
-        )
-        return Perception(ocr_provider=ocr)
-    return None
+    ocr = build_ocr_provider_from_env()
+    if ocr is None:
+        return None
+    print(f"[OCR INIT] provider={ocr.__class__.__name__} env={os.getenv('OCR_PROVIDER')}")
+    return Perception(ocr_provider=ocr)
 
 
 @pytest.fixture(scope="session")
@@ -69,7 +67,6 @@ def appium_adapter(device_config, project_profile):
     capabilities = {}
     capabilities.update(device_config["device"])
     capabilities.update(device_config.get("app", {}))
-    # 若未在 device.yaml 指定 appPackage，可由项目配置补齐。
     if not capabilities.get("appPackage") and project_profile.app_package:
         capabilities["appPackage"] = project_profile.app_package
     implicit_wait = device_config.get("runtime", {}).get("implicit_wait", 10)
@@ -99,11 +96,11 @@ def step_runner(evidence_manager, appium_adapter, perception):
 
 @pytest.fixture(scope="function")
 def executor(appium_adapter, step_runner, perception, policy_runner):
-    ai_provider = PolicyRunnerHealAIProvider(policy_runner) if os.getenv("DASHSCOPE_API_KEY") else None
+    ai_provider = PolicyRunnerHealAIProvider(policy_runner) if policy_runner is not None else None
     click_healer = HealPolicy(
         locator_store_path="core/heal/locator_store.yaml",
         ai_provider=ai_provider,
-        accept_threshold=0.72,
+        accept_threshold=0.70,
     )
     return Executor(adapter=appium_adapter, step_runner=step_runner, perception=perception, click_healer=click_healer)
 

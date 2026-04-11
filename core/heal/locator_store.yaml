@@ -1,4 +1,21 @@
 entries:
+  close:
+    aliases:
+      - 关闭
+      - 点击跳过
+      - 跳过
+      - 我知道了
+      - 知道了
+      - 稍后
+      - 以后再说
+    preferred_regions:
+      - top_right
+      - center
+    template_ids:
+      - close_x
+      - popup_close
+    notes: 高频关闭类入口，优先模板或右上区域
+
   agree:
     aliases:
       - 同意
@@ -9,6 +26,7 @@ entries:
       - 允许
       - 去开启
     preferred_regions:
+      - bottom_primary_area
       - bottom_center
       - bottom_right
     notes: 通用确认类按钮
@@ -33,6 +51,7 @@ entries:
       - 确认提交
       - 立即保存
     preferred_regions:
+      - bottom_primary_area
       - bottom_right
       - bottom_center
     notes: 表单提交类按钮
@@ -45,6 +64,7 @@ entries:
       - 去看看
       - 开始
     preferred_regions:
+      - bottom_primary_area
       - bottom_center
       - bottom_right
     notes: 流程推进类按钮
@@ -57,6 +77,8 @@ entries:
     preferred_regions:
       - top_left
       - center_left
+    template_ids:
+      - back_arrow
     notes: 返回类按钮
 
   search:
@@ -76,6 +98,7 @@ entries:
       - 去登录
       - 立即登录
     preferred_regions:
+      - bottom_primary_area
       - bottom_center
       - bottom_right
-    notes: 登录页主按钮，boxes 为空时优先走 AI 点击兜底
+    notes: 登录页主按钮，优先 OCR 文本定位，再向下偏移点击

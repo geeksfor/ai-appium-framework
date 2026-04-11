@@ -42,13 +42,7 @@ class ExecResult:
 
 
 class Executor:
-    def __init__(
-        self,
-        adapter: AppiumAdapter,
-        step_runner: StepRunner,
-        perception: Any | None = None,
-        click_healer: Any | None = None,
-    ):
+    def __init__(self, adapter: AppiumAdapter, step_runner: StepRunner, perception: Any | None = None, click_healer: Any | None = None):
         self.adapter = adapter
         self.step_runner = step_runner
         self.perception = perception
@@ -59,13 +53,11 @@ class Executor:
         executed = 0
         last_action: dict | None = None
         actions_path = self._archive_actions(plan)
-
         for idx, act in enumerate(plan.actions, start=1):
             step_name = act.name or f"{idx:02d}_{act.type}"
             last_action = act.model_dump()
             self.step_runner.run(name=step_name, action=str(act.type), fn=lambda a=act: self._execute_one(a))
             executed += 1
-
         return ExecResult(ok=True, executed=executed, last_action=last_action, actions_path=actions_path)
 
     def _execute_one(self, act: Action) -> Any:
@@ -88,7 +80,6 @@ class Executor:
     def _do_click(self, act: ClickAction) -> None:
         has_abs = act.x is not None and act.y is not None
         has_pct = act.x_pct is not None and act.y_pct is not None
-
         if has_abs or has_pct:
             if has_abs:
                 x, y = int(act.x), int(act.y)
@@ -96,21 +87,9 @@ class Executor:
                 size = self.adapter.get_window_size()
                 x = int(size["width"] * float(act.x_pct))
                 y = int(size["height"] * float(act.y_pct))
+            self.adapter.tap(x, y)
+            return
 
-            if hasattr(act, "allow_heal") and not act.allow_heal:
-                self.adapter.tap(x, y)
-                return
-
-            try:
-                self.adapter.tap(x, y)
-                return
-            except Exception as tap_err:
-                if self.click_healer is None:
-                    raise tap_err
-                self._heal_and_tap(act, tap_err)
-                return
-
-        # 纯语义点击：直接构建 pack -> healer 计算坐标 -> 点击
         if self.click_healer is None:
             raise RuntimeError("Semantic CLICK requires click_healer to be configured.")
         self._heal_and_tap(act, None)
@@ -121,27 +100,26 @@ class Executor:
             if original_error is not None:
                 raise original_error
             raise RuntimeError("Semantic CLICK missing selector/target/logical_name.")
-
         pack = self._build_pack()
         save_path = self._next_heal_save_path(heal_selector)
-
         try:
             result = self.click_healer.heal_click(
                 pack=pack,
                 selector=heal_selector,
                 logical_name=self._str_or_none(getattr(act, "logical_name", "")),
                 save_path=save_path,
+                target_type=self._str_or_none(getattr(act, "target_type", "")) or "auto",
+                text_candidates=list(getattr(act, "text_candidates", []) or []),
+                region_hints=self._merge_region_hints(getattr(act, "region_hint", ""), getattr(act, "region_hints", [])),
             )
         except Exception:
             if original_error is not None:
                 raise original_error
             raise
-
         if not result or not result.healed or result.chosen is None:
             if original_error is not None:
                 raise original_error
             raise RuntimeError(f"Semantic CLICK unresolved: selector={heal_selector}")
-
         size = self.adapter.get_window_size()
         heal_x = int(size["width"] * float(result.chosen.x_pct))
         heal_y = int(size["height"] * float(result.chosen.y_pct))
@@ -172,7 +150,31 @@ class Executor:
         driver = self.adapter.driver
         if not driver:
             raise RuntimeError("Driver not started")
-        x, y = self._xy_from_abs_or_pct(act.x, act.y, act.x_pct, act.y_pct)
+
+        has_abs = act.x is not None and act.y is not None
+        has_pct = act.x_pct is not None and act.y_pct is not None
+        if has_abs or has_pct:
+            x, y = self._xy_from_abs_or_pct(act.x, act.y, act.x_pct, act.y_pct)
+        else:
+            if self.click_healer is None:
+                raise RuntimeError("Semantic INPUT requires click_healer to be configured.")
+            selector = self._pick_input_selector(act)
+            pack = self._build_pack()
+            save_path = self._next_heal_save_path(selector or "input")
+            result = self.click_healer.heal_input(
+                pack=pack,
+                selector=selector or act.logical_name or act.name or "input",
+                logical_name=self._str_or_none(getattr(act, "logical_name", "")),
+                save_path=save_path,
+                text_candidates=list(getattr(act, "text_candidates", []) or []),
+                region_hints=self._merge_region_hints(getattr(act, "region_hint", ""), getattr(act, "region_hints", [])),
+            )
+            if not result or not result.healed or result.chosen is None:
+                raise RuntimeError(f"Semantic INPUT unresolved: selector={selector}")
+            size = self.adapter.get_window_size()
+            x = int(size["width"] * float(result.chosen.x_pct))
+            y = int(size["height"] * float(result.chosen.y_pct))
+
         self.adapter.tap(x, y)
         time.sleep(0.2)
         if act.clear_first:
@@ -237,16 +239,41 @@ class Executor:
             return str(act.name)
         return None
 
+    def _pick_input_selector(self, act: InputAction) -> str | None:
+        selector = self._str_or_none(getattr(act, "selector", ""))
+        if selector:
+            return selector
+        target = self._str_or_none(getattr(act, "target", ""))
+        if target:
+            return f"text={target}"
+        target_text = self._str_or_none(getattr(act, "target_text", ""))
+        if target_text:
+            return f"text={target_text}"
+        logical_name = self._str_or_none(getattr(act, "logical_name", ""))
+        if logical_name:
+            return logical_name
+        if act.name:
+            return str(act.name)
+        return None
+
+    def _merge_region_hints(self, region_hint: str, region_hints: list[str]) -> list[str]:
+        out: list[str] = []
+        if str(region_hint or "").strip():
+            out.append(str(region_hint).strip())
+        for x in region_hints or []:
+            s = str(x or "").strip()
+            if s and s not in out:
+                out.append(s)
+        return out
+
     def _str_or_none(self, value: Any) -> str | None:
         s = str(value or "").strip()
         return s if s else None
 
     def _build_pack(self) -> Any:
-        # 优先读取当前 step_runner 已采集好的 evidence，不让 case 自己拼 pack。
         pack = self._pack_from_latest_step()
         if pack is not None:
             return pack
-
         if self.perception is not None:
             for method_name in ["build_pack", "build", "collect", "perceive", "run"]:
                 method = getattr(self.perception, method_name, None)
@@ -257,7 +284,6 @@ class Executor:
                             return pack
                     except TypeError:
                         continue
-
         return SimplePack(image_path="", ocr_text="", meta={"ocr_boxes": []})
 
     def _pack_from_latest_step(self) -> PerceptionPack | None:
@@ -274,11 +300,13 @@ class Executor:
                 image_path = step_dir / "screenshot_after.png"
             text = ocr_path.read_text(encoding="utf-8", errors="ignore") if ocr_path.exists() else ""
             meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {"ocr_boxes": []}
-            return PerceptionPack(
-                image_path=str(image_path) if image_path.exists() else "",
-                ocr_text=text,
-                meta=meta,
-            )
+            for name in ["page_source_after.xml", "page_source.xml", "page_source_fail.xml"]:
+                p = step_dir / name
+                if p.exists():
+                    meta["page_source_path"] = str(p)
+                    break
+            meta["step_dir"] = str(step_dir)
+            return PerceptionPack(image_path=str(image_path) if image_path.exists() else "", ocr_text=text, meta=meta)
         except Exception:
             return None
 
