@@ -1,0 +1,11 @@
+{
+  "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "model": "qwen3.5-plus",
+  "timeout_s": 20,
+  "system_prompt_chars": 955,
+  "user_payload_chars": 2042,
+  "request_bytes": 4073,
+  "has_extra": false,
+  "extra_keys": []
+}

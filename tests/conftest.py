@@ -49,15 +49,23 @@ def evidence_manager(device_config):
 
 @pytest.fixture(scope="session")
 def policy_runner(evidence_manager):
+    print("[DEBUG] DASHSCOPE_API_KEY exists =", bool(os.getenv("DASHSCOPE_API_KEY")))
+    print("[DEBUG] DASHSCOPE_BASE_URL =", os.getenv("DASHSCOPE_BASE_URL"))
+    print("[DEBUG] DASHSCOPE_MODEL =", os.getenv("DASHSCOPE_MODEL"))
     if not os.getenv("DASHSCOPE_API_KEY"):
+        print("[DEBUG] policy_runner skipped: DASHSCOPE_API_KEY missing")
         return None
     try:
         qwen = QwenClient(
             base_url=os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
             model=os.getenv("DASHSCOPE_MODEL", "qwen3.5-plus"),
         )
-        return PolicyRunner(qwen=qwen, evidence_manager=evidence_manager)
+        runner = PolicyRunner(qwen=qwen, evidence_manager=evidence_manager)
+        print("[DEBUG] policy_runner created:", runner)
+        return runner
+        # return PolicyRunner(qwen=qwen, evidence_manager=evidence_manager)
     except Exception:
+        print("[DEBUG] policy_runner init failed:", repr(e))
         return None
 
 
@@ -96,7 +104,12 @@ def step_runner(evidence_manager, appium_adapter, perception):
 
 @pytest.fixture(scope="function")
 def executor(appium_adapter, step_runner, perception, policy_runner):
+    print("[DEBUG] executor sees DASHSCOPE_API_KEY =", bool(os.getenv("DASHSCOPE_API_KEY")))
+    print("[DEBUG] executor policy_runner =", policy_runner)
+
     ai_provider = PolicyRunnerHealAIProvider(policy_runner) if policy_runner is not None else None
+    print("[DEBUG] executor ai_provider =", ai_provider)
+    
     click_healer = HealPolicy(
         locator_store_path="core/heal/locator_store.yaml",
         ai_provider=ai_provider,

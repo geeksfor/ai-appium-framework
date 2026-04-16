@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
-from typing import Optional, Iterable
+from typing import Optional
 
 from core.executor.action_schema import ActionPlan, ClickAction, InputAction, WaitAction
+from core.recovery.regions import merge_region_hints
 from core.runtime.observer import Observer
 from core.runtime.project_loader import ProjectProfile, load_project_profile
 from core.state.state_machine import StateMachine, StateDetectResult
-from core.recovery.regions import merge_region_hints
 
 
 @dataclass
@@ -46,12 +45,18 @@ class AppSession:
         pkg = (app_package or self.project_profile.app_package or "").strip()
         if not pkg:
             raise RuntimeError(f"No app package configured for project={self.project_id}")
-        self.step_runner.run(name=f"launch_{self.project_id}", action="activate_app", fn=lambda: self.adapter.activate_app(pkg))
+        self.step_runner.run(
+            name=f"launch_{self.project_id}",
+            action="activate_app",
+            fn=lambda: self.adapter.activate_app(pkg),
+        )
         if wait_seconds > 0:
             self.wait(wait_seconds, name="wait_after_launch")
 
     def wait(self, seconds: float, name: str = "wait"):
-        plan = ActionPlan.model_validate({"actions": [{"type": "WAIT", "name": name, "seconds": float(seconds)}]})
+        plan = ActionPlan.model_validate(
+            {"actions": [{"type": "WAIT", "name": name, "seconds": float(seconds)}]}
+        )
         return self.executor.run_plan(plan)
 
     def observe(self, name: str = "observe") -> ObserveResult:
@@ -63,83 +68,109 @@ class AppSession:
         return self.observe(name=name).state
 
     def resolve_state_name(self, state_name: str) -> str:
-        key = str(state_name or "").strip()
-        if not key:
-            return key
-        return self.project_profile.resolve_state(key)
-
-    def _is_loading_state(self, state_res: StateDetectResult) -> bool:
-        state_name = str(state_res.state or "")
-        if state_name == "Busy.Loading":
-            return True
-        hints = list((state_res.meta or {}).get("overlay_hints", []) or [])
-        loading_words = ("正在加载", "请稍后", "加载中", "处理中", "提交中")
-        return any(any(w in str(h) for w in loading_words) for h in hints)
-
-    def _should_treat_as_ready(self, state_res: StateDetectResult, expected: str) -> bool:
-        if self._is_loading_state(state_res):
-            return False
-        return state_res.state == expected
+        return self.project_profile.resolve_state(state_name)
 
     def expect_state(
         self,
         state_name: str,
         name: str = "observe_expect",
         *,
+        max_rounds: int = 6,
         stable_rounds: int = 2,
-        max_rounds: int = 8,
-        interval_s: float = 0.8,
+        wait_after_loading_s: float = 1.0,
+        wait_between_rounds_s: float = 0.8,
+        loading_state_name: str = "Busy.Loading",
     ) -> ObserveResult:
         expected = self.resolve_state_name(state_name)
-        last_ok = 0
+        loading_state = self.resolve_state_name(loading_state_name)
+
+        consecutive = 0
+        last_state: Optional[str] = None
         last_res: Optional[ObserveResult] = None
 
-        for idx in range(max_rounds):
-            res = self.observe(name=name if idx == 0 else f"{name}_retry_{idx}")
+        for i in range(max_rounds):
+            obs_name = name if i == 0 else f"{name}_retry_{i}"
+            res = self.observe(name=obs_name)
             last_res = res
+            current = res.state.state
 
-            if self._is_loading_state(res.state):
-                last_ok = 0
-                if idx < max_rounds - 1 and interval_s > 0:
-                    self.wait(interval_s, name=f"wait_loading_{idx}")
+            if current == loading_state:
+                consecutive = 0
+                last_state = current
+                if i < max_rounds - 1 and wait_after_loading_s > 0:
+                    self.wait(wait_after_loading_s, name="wait_loading_overlay")
                 continue
 
-            if self._should_treat_as_ready(res.state, expected):
-                last_ok += 1
-                if last_ok >= max(1, stable_rounds):
+            if current == expected:
+                if last_state == expected:
+                    consecutive += 1
+                else:
+                    consecutive = 1
+
+                if consecutive >= stable_rounds:
                     return res
             else:
-                last_ok = 0
+                consecutive = 0
 
-            if idx < max_rounds - 1 and interval_s > 0:
-                self.wait(interval_s, name=f"wait_expect_retry_{idx}")
+            last_state = current
+
+            if i < max_rounds - 1 and wait_between_rounds_s > 0:
+                self.wait(wait_between_rounds_s, name="wait_state_stable")
 
         if last_res is None:
-            raise AssertionError(f"Expected state={expected}, but no observation was produced")
+            raise AssertionError(f"Expected state={expected}, but no observation result was produced")
+
         raise AssertionError(
-            f"Expected state={expected}, got={last_res.state.state}, score={last_res.state.score}, "
-            f"topk={last_res.state.meta.get('topk')}"
+            f"Expected state={expected}, got={last_res.state.state}, "
+            f"score={last_res.state.score}, topk={last_res.state.meta.get('topk')}"
         )
 
-    def tap_text(self, text: str, logical_name: str = "", wait_after: float = 0.8, step_name: str = "tap_text"):
+    def tap_text(
+        self,
+        text: str,
+        logical_name: str = "",
+        wait_after: float = 0.8,
+        step_name: str = "tap_text",
+    ):
         text = str(text or "").strip()
         if not text:
             raise ValueError("tap_text requires non-empty text")
-        actions = [ClickAction(name=step_name, selector=f"text={text}", target=text, logical_name=logical_name, allow_heal=True)]
+        actions = [
+            ClickAction(
+                name=step_name,
+                selector=f"text={text}",
+                target=text,
+                logical_name=logical_name,
+                allow_heal=True,
+            )
+        ]
         if wait_after > 0:
             actions.append(WaitAction(name="wait_after_tap", seconds=float(wait_after)))
         return self.executor.run_plan(ActionPlan(actions=actions))
 
-    def tap_semantic(self, logical_name: str, fallback_text: str = "", wait_after: float = 0.8, step_name: str = "tap_semantic"):
+    def tap_semantic(
+        self,
+        logical_name: str,
+        fallback_text: str = "",
+        wait_after: float = 0.8,
+        step_name: str = "tap_semantic",
+    ):
         spec = dict(self.project_profile.semantic_targets.get(logical_name, {}) or {})
         aliases = self.project_profile.semantic_target_aliases(logical_name)
         primary = fallback_text or (aliases[0] if aliases else logical_name)
-        region_hints = [str(x).strip() for x in (spec.get("region_hints") or []) if str(x).strip()]
+        explicit_hints = [str(x).strip() for x in (spec.get("region_hints") or []) if str(x).strip()]
         region_hint = str(spec.get("region_hint") or "").strip()
-        if region_hint and region_hint not in region_hints:
-            region_hints.insert(0, region_hint)
-        region_hints = merge_region_hints(raw_target=primary, target_role="button", explicit_hints=region_hints)
+        if region_hint:
+            explicit_hints.insert(0, region_hint)
         target_type = str(spec.get("target_type") or "auto").strip() or "auto"
+        target_role = str(
+            spec.get("target_role") or ("input" if target_type == "input" else "button")
+        ).strip() or "button"
+        region_hints = merge_region_hints(
+            raw_target=primary,
+            target_role=target_role,
+            explicit_hints=explicit_hints,
+        )
         actions = [
             ClickAction(
                 name=step_name,
@@ -156,15 +187,26 @@ class AppSession:
             actions.append(WaitAction(name="wait_after_tap", seconds=float(wait_after)))
         return self.executor.run_plan(ActionPlan(actions=actions))
 
-    def input_semantic(self, logical_name: str, text: str, fallback_text: str = "", wait_after: float = 0.2, step_name: str = "input_semantic"):
+    def input_semantic(
+        self,
+        logical_name: str,
+        text: str,
+        fallback_text: str = "",
+        wait_after: float = 0.2,
+        step_name: str = "input_semantic",
+    ):
         spec = dict(self.project_profile.semantic_targets.get(logical_name, {}) or {})
         aliases = self.project_profile.semantic_target_aliases(logical_name)
         primary = fallback_text or (aliases[0] if aliases else logical_name)
-        region_hints = [str(x).strip() for x in (spec.get("region_hints") or []) if str(x).strip()]
+        explicit_hints = [str(x).strip() for x in (spec.get("region_hints") or []) if str(x).strip()]
         region_hint = str(spec.get("region_hint") or "").strip()
-        if region_hint and region_hint not in region_hints:
-            region_hints.insert(0, region_hint)
-        region_hints = merge_region_hints(raw_target=primary, target_role="input", explicit_hints=region_hints)
+        if region_hint:
+            explicit_hints.insert(0, region_hint)
+        region_hints = merge_region_hints(
+            raw_target=primary,
+            target_role="input",
+            explicit_hints=explicit_hints,
+        )
         actions = [
             InputAction(
                 name=step_name,

@@ -1,37 +1,37 @@
 {
   "raw_target": "登录",
   "healed": true,
-  "confidence": 0.9427,
+  "confidence": 0.9441,
   "chosen": {
     "text": "登录",
-    "x_pct": 0.5,
-    "y_pct": 0.9387,
-    "score": 0.9427,
+    "x_pct": 0.4998,
+    "y_pct": 0.9397,
+    "score": 0.9441,
     "source": "ocr-region",
     "reason": "ocr-region命中 登录",
     "raw_target": "登录",
     "bbox": {
-      "x1": 0.484,
+      "x1": 0.4835,
       "y1": 0.9217,
       "x2": 0.516,
-      "y2": 0.9492
+      "y2": 0.9508
     },
     "target_role": "button"
   },
   "candidates": [
     {
       "text": "登录",
-      "x_pct": 0.5,
-      "y_pct": 0.9387,
-      "score": 0.9427,
+      "x_pct": 0.4998,
+      "y_pct": 0.9397,
+      "score": 0.9441,
       "source": "ocr-region",
       "reason": "ocr-region命中 登录",
       "raw_target": "登录",
       "bbox": {
-        "x1": 0.484,
+        "x1": 0.4835,
         "y1": 0.9217,
         "x2": 0.516,
-        "y2": 0.9492
+        "y2": 0.9508
       },
       "target_role": "button"
     }

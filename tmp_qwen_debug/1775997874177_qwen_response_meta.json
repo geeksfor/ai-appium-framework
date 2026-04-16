@@ -1,0 +1,14 @@
+{
+  "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "model": "qwen-vl-max",
+  "timeout_s": 20,
+  "system_prompt_chars": 955,
+  "user_payload_chars": 2024,
+  "request_bytes": 4054,
+  "has_extra": false,
+  "extra_keys": [],
+  "elapsed_ms": 2324,
+  "status_code": 200,
+  "response_content_chars": 220
+}

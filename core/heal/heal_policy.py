@@ -49,11 +49,13 @@ class HealPolicy:
         candidate_threshold: float = 0.45,
     ):
         self.accept_threshold = accept_threshold
+        print("[DEBUG] HealPolicy creating ClickResolver with ai_provider =", ai_provider, type(ai_provider))
         self.resolver = ClickResolver(
             policy_runner=getattr(ai_provider, "policy_runner", None),
             locator_store_path=locator_store_path,
             candidate_threshold=candidate_threshold,
         )
+        # print("[DEBUG] HealPolicy creating ClickResolver with ai_provider =", ai_provider, type(ai_provider))
 
     def heal_click(
         self,
